@@ -567,6 +567,7 @@ def get_ego_state_for_lidarpc_token_from_db(log_file: str, token: str) -> EgoSta
     query = """
         SELECT  ep.x,
                 ep.y,
+                ep.z,
                 ep.qw,
                 ep.qx,
                 ep.qy,
@@ -596,6 +597,8 @@ def get_ego_state_for_lidarpc_token_from_db(log_file: str, token: str) -> EgoSta
         time_point=TimePoint(row["timestamp"]),
         rear_axle_velocity_2d=StateVector2D(row["vx"], y=row["vy"]),
         rear_axle_acceleration_2d=StateVector2D(x=row["acceleration_x"], y=row["acceleration_y"]),
+        quaternion=q,
+        z=row["z"],
     )
 
 

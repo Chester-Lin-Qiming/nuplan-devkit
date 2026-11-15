@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Iterable, List, Union
+from typing import Iterable, List, Optional, Union
+
+from pyquaternion import Quaternion
 
 from nuplan.common.actor_state.agent_state import AgentState
 from nuplan.common.actor_state.car_footprint import CarFootprint
@@ -25,6 +27,8 @@ class EgoState(InterpolatableState):
         tire_steering_angle: float,
         is_in_auto_mode: bool,
         time_point: TimePoint,
+        quaternion: Optional[Quaternion] = None,
+        z: float = 0.0,
     ):
         """
         :param car_footprint: The CarFootprint of Ego
@@ -32,12 +36,20 @@ class EgoState(InterpolatableState):
         :param tire_steering_angle: The current steering angle of the tires
         :param is_in_auto_mode: If the state refers to car in autonomous mode
         :param time_point: Time stamp of the state
+        :param quaternion: Full 3D attitude of ego as reported by the source (e.g. the nuPlan
+            `ego_pose` table). EgoState itself is SE(2), so this is carried through untouched for
+            consumers that want roll/pitch as well as yaw; when omitted it is rebuilt from
+            `rear_axle.heading` (yaw only).
+        :param z: Elevation of ego. Not part of the SE(2) state, carried through for consumers
+            that build a 3D transform; defaults to 0.0 when the source does not provide one.
         """
         self._car_footprint = car_footprint
         self._tire_steering_angle = tire_steering_angle
         self._is_in_auto_mode = is_in_auto_mode
         self._time_point = time_point
         self._dynamic_car_state = dynamic_car_state
+        self._quaternion = quaternion
+        self._z = float(z)
 
     @cached_property
     def waypoint(self) -> Waypoint:
@@ -159,6 +171,32 @@ class EgoState(InterpolatableState):
         return self.car_footprint.rear_axle
 
     @property
+    def quaternion(self) -> Quaternion:
+        """
+        Getter for Ego's attitude.
+
+        Returns the full 3D quaternion that was carried in through the constructor (e.g. the
+        `ego_pose` table's qx/qy/qz/qw, which includes road roll/pitch). EgoState itself is SE(2),
+        so when no quaternion was supplied it is rebuilt from `rear_axle.heading` as a pure
+        rotation about Z: same yaw, zero roll/pitch.
+        :return: Quaternion
+        """
+        if self._quaternion is not None:
+            return self._quaternion
+        return Quaternion(axis=[0.0, 0.0, 1.0], angle=self.rear_axle.heading)
+
+    @property
+    def z(self) -> float:
+        """
+        Getter for Ego's elevation [m].
+
+        Not part of the SE(2) state; carried in through the constructor when the source provides
+        it (nuPlan `ego_pose.z`), otherwise 0.0.
+        :return: [m]
+        """
+        return self._z
+
+    @property
     def time_point(self) -> TimePoint:
         """
         Time stamp of the EgoState
@@ -223,6 +261,8 @@ class EgoState(InterpolatableState):
         angular_vel: float = 0.0,
         angular_accel: float = 0.0,
         tire_steering_rate: float = 0.0,
+        quaternion: Optional[Quaternion] = None,
+        z: float = 0.0,
     ) -> EgoState:
         """
         Initializer using raw parameters, assumes that the reference frame is CAR_POINT.REAR_AXLE
@@ -236,6 +276,8 @@ class EgoState(InterpolatableState):
         :param time_point: Timestamp of the ego state
         :param vehicle_parameters: Vehicle parameters
         :param tire_steering_rate: Steering rate of tires [rad/s]
+        :param quaternion: Full 3D attitude carried through from the source, see `EgoState.quaternion`
+        :param z: Elevation of ego [m], carried through from the source, see `EgoState.z`
         :return: The initialized EgoState
         """
         car_footprint = CarFootprint.build_from_rear_axle(
@@ -256,6 +298,8 @@ class EgoState(InterpolatableState):
             tire_steering_angle=tire_steering_angle,
             time_point=time_point,
             is_in_auto_mode=is_in_auto_mode,
+            quaternion=quaternion,
+            z=z,
         )
 
     @classmethod
